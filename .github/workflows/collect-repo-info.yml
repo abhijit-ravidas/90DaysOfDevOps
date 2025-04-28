@@ -1,0 +1,66 @@
+name: Collect GitHub Repository Information
+
+on:
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  extract-repo-info:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Python libraries
+        run: |
+          pip install requests pandas
+
+      - name: Extract repository information
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # GitHub provides this token automatically
+        run: |
+          python <<EOF
+          import requests
+          import pandas as pd
+
+          token = "${{ secrets.GITHUB_TOKEN }}"
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json"
+          }
+
+          repos = []
+          page = 1
+          while True:
+              url = f"https://api.github.com/user/repos?per_page=100&page={page}"
+              response = requests.get(url, headers=headers)
+              data = response.json()
+              if not data:
+                  break
+              repos.extend(data)
+              page += 1
+
+          info = []
+          for repo in repos:
+              info.append({
+                  "Name": repo["name"],
+                  "URL": repo["html_url"],
+                  "Visibility": repo["visibility"],
+                  "Language": repo.get("language"),
+                  "Stars": repo["stargazers_count"],
+                  "Forks": repo["forks_count"],
+                  "Created At": repo["created_at"]
+              })
+
+          df = pd.DataFrame(info)
+          df.to_csv("repositories.csv", index=False)
+          print(f"Saved {len(info)} repositories to CSV.")
+          EOF
+
+      - name: Upload CSV as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-info
+          path: repositories.csv
